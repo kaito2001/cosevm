@@ -94,9 +94,19 @@ import (
 	"github.com/ignite-hq/cli/ignite/pkg/cosmoscmd"
 	"github.com/ignite-hq/cli/ignite/pkg/openapiconsole"
 
-	monitoringp "github.com/tendermint/spn/x/monitoringp"
-	monitoringpkeeper "github.com/tendermint/spn/x/monitoringp/keeper"
-	monitoringptypes "github.com/tendermint/spn/x/monitoringp/types"
+	// monitoringp "github.com/tendermint/spn/x/monitoringp"
+	// monitoringpkeeper "github.com/tendermint/spn/x/monitoringp/keeper"
+	// monitoringptypes "github.com/tendermint/spn/x/monitoringp/types"
+
+	"github.com/tharsis/ethermint/app/ante"
+	srvflags "github.com/tharsis/ethermint/server/flags"
+	"github.com/tharsis/ethermint/x/evm"
+	evmrest "github.com/tharsis/ethermint/x/evm/client/rest"
+	evmkeeper "github.com/tharsis/ethermint/x/evm/keeper"
+	evmtypes "github.com/tharsis/ethermint/x/evm/types"
+	"github.com/tharsis/ethermint/x/feemarket"
+	feemarketkeeper "github.com/tharsis/ethermint/x/feemarket/keeper"
+	feemarkettypes "github.com/tharsis/ethermint/x/feemarket/types"
 
 	"cosevm/docs"
 
@@ -156,7 +166,12 @@ var (
 		evidence.AppModuleBasic{},
 		transfer.AppModuleBasic{},
 		vesting.AppModuleBasic{},
-		monitoringp.AppModuleBasic{},
+		// monitoringp.AppModuleBasic{},
+
+		// EVM Modules
+		evm.AppModuleBasic{},
+		feemarket.AppModuleBasic{},
+
 		cosevmmodule.AppModuleBasic{},
 		// this line is used by starport scaffolding # stargate/app/moduleBasic
 	)
@@ -170,7 +185,9 @@ var (
 		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
 		govtypes.ModuleName:            {authtypes.Burner},
 		ibctransfertypes.ModuleName:    {authtypes.Minter, authtypes.Burner},
+		evmtypes.ModuleName:            {authtypes.Minter, authtypes.Burner}, // used for secure addition and subtraction of balance using module account
 		// this line is used by starport scaffolding # stargate/app/maccPerms
+
 	}
 )
 
@@ -223,12 +240,16 @@ type App struct {
 	EvidenceKeeper   evidencekeeper.Keeper
 	TransferKeeper   ibctransferkeeper.Keeper
 	FeeGrantKeeper   feegrantkeeper.Keeper
-	MonitoringKeeper monitoringpkeeper.Keeper
+	// MonitoringKeeper monitoringpkeeper.Keeper
 
 	// make scoped keepers public for test purposes
 	ScopedIBCKeeper        capabilitykeeper.ScopedKeeper
 	ScopedTransferKeeper   capabilitykeeper.ScopedKeeper
 	ScopedMonitoringKeeper capabilitykeeper.ScopedKeeper
+
+	// Ethermint keepers
+	EvmKeeper       *evmkeeper.Keeper
+	FeeMarketKeeper feemarketkeeper.Keeper
 
 	CosevmKeeper cosevmmodulekeeper.Keeper
 	// this line is used by starport scaffolding # stargate/app/keeperDeclaration
@@ -268,9 +289,12 @@ func New(
 		govtypes.StoreKey, paramstypes.StoreKey, ibchost.StoreKey, upgradetypes.StoreKey, feegrant.StoreKey,
 		evidencetypes.StoreKey, ibctransfertypes.StoreKey, capabilitytypes.StoreKey, monitoringptypes.StoreKey,
 		cosevmmoduletypes.StoreKey,
+
+		// evm keys
+		evmtypes.StoreKey, feemarkettypes.StoreKey,
 		// this line is used by starport scaffolding # stargate/app/storeKey
 	)
-	tkeys := sdk.NewTransientStoreKeys(paramstypes.TStoreKey)
+	tkeys := sdk.NewTransientStoreKeys(paramstypes.TStoreKey, evmtypes.TransientKey)
 	memKeys := sdk.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
 
 	app := &App{
@@ -338,6 +362,19 @@ func New(
 
 	// ... other modules keepers
 
+	tracer := cast.ToString(appOpts.Get(srvflags.EVMTracer))
+
+	// Create Ethermint keepers
+	app.FeeMarketKeeper = feemarketkeeper.NewKeeper(
+		appCodec, keys[feemarkettypes.StoreKey], app.GetSubspace(feemarkettypes.ModuleName),
+	)
+
+	app.EvmKeeper = evmkeeper.NewKeeper(
+		appCodec, keys[evmtypes.StoreKey], tkeys[evmtypes.TransientKey], app.GetSubspace(evmtypes.ModuleName),
+		app.AccountKeeper, app.BankKeeper, app.StakingKeeper, app.FeeMarketKeeper,
+		tracer,
+	)
+
 	// Create IBC Keeper
 	app.IBCKeeper = ibckeeper.NewKeeper(
 		appCodec, keys[ibchost.StoreKey], app.GetSubspace(ibchost.ModuleName), app.StakingKeeper, app.UpgradeKeeper, scopedIBCKeeper,
@@ -374,20 +411,20 @@ func New(
 		&stakingKeeper, govRouter,
 	)
 
-	scopedMonitoringKeeper := app.CapabilityKeeper.ScopeToModule(monitoringptypes.ModuleName)
-	app.MonitoringKeeper = *monitoringpkeeper.NewKeeper(
-		appCodec,
-		keys[monitoringptypes.StoreKey],
-		keys[monitoringptypes.MemStoreKey],
-		app.GetSubspace(monitoringptypes.ModuleName),
-		app.StakingKeeper,
-		app.IBCKeeper.ClientKeeper,
-		app.IBCKeeper.ConnectionKeeper,
-		app.IBCKeeper.ChannelKeeper,
-		&app.IBCKeeper.PortKeeper,
-		scopedMonitoringKeeper,
-	)
-	monitoringModule := monitoringp.NewAppModule(appCodec, app.MonitoringKeeper)
+	// scopedMonitoringKeeper := app.CapabilityKeeper.ScopeToModule(monitoringptypes.ModuleName)
+	// app.MonitoringKeeper = *monitoringpkeeper.NewKeeper(
+	// 	appCodec,
+	// 	keys[monitoringptypes.StoreKey],
+	// 	keys[monitoringptypes.MemStoreKey],
+	// 	app.GetSubspace(monitoringptypes.ModuleName),
+	// 	app.StakingKeeper,
+	// 	app.IBCKeeper.ClientKeeper,
+	// 	app.IBCKeeper.ConnectionKeeper,
+	// 	app.IBCKeeper.ChannelKeeper,
+	// 	&app.IBCKeeper.PortKeeper,
+	// 	scopedMonitoringKeeper,
+	// )
+	// monitoringModule := monitoringp.NewAppModule(appCodec, app.MonitoringKeeper)
 
 	app.CosevmKeeper = *cosevmmodulekeeper.NewKeeper(
 		appCodec,
@@ -402,7 +439,7 @@ func New(
 	// Create static IBC router, add transfer route, then set and seal it
 	ibcRouter := ibcporttypes.NewRouter()
 	ibcRouter.AddRoute(ibctransfertypes.ModuleName, transferIBCModule)
-	ibcRouter.AddRoute(monitoringptypes.ModuleName, monitoringModule)
+	// ibcRouter.AddRoute(monitoringptypes.ModuleName, monitoringModule)
 	// this line is used by starport scaffolding # ibc/app/router
 	app.IBCKeeper.SetRouter(ibcRouter)
 
@@ -437,7 +474,11 @@ func New(
 		ibc.NewAppModule(app.IBCKeeper),
 		params.NewAppModule(app.ParamsKeeper),
 		transferModule,
-		monitoringModule,
+		// monitoringModule,
+
+		// evm app module
+		evm.NewAppModule(app.EvmKeeper, app.AccountKeeper),
+		feemarket.NewAppModule(app.FeeMarketKeeper),
 		cosevmModule,
 		// this line is used by starport scaffolding # stargate/app/appModule
 	)
@@ -465,7 +506,8 @@ func New(
 		genutiltypes.ModuleName,
 		feegrant.ModuleName,
 		paramstypes.ModuleName,
-		monitoringptypes.ModuleName,
+		// monitoringptypes.ModuleName,
+		evmtypes.ModuleName,
 		cosevmmoduletypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/beginBlockers
 	)
@@ -489,7 +531,8 @@ func New(
 		upgradetypes.ModuleName,
 		ibchost.ModuleName,
 		ibctransfertypes.ModuleName,
-		monitoringptypes.ModuleName,
+		// monitoringptypes.ModuleName,
+		evmtypes.ModuleName,
 		cosevmmoduletypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/endBlockers
 	)
@@ -518,7 +561,8 @@ func New(
 		upgradetypes.ModuleName,
 		ibctransfertypes.ModuleName,
 		feegrant.ModuleName,
-		monitoringptypes.ModuleName,
+		// monitoringptypes.ModuleName,
+		evmtypes.ModuleName,
 		cosevmmoduletypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/initGenesis
 	)
@@ -543,7 +587,8 @@ func New(
 		evidence.NewAppModule(app.EvidenceKeeper),
 		ibc.NewAppModule(app.IBCKeeper),
 		transferModule,
-		monitoringModule,
+		// monitoringModule,evm.NewAppModule(app.EvmKeeper, app.AccountKeeper),
+		feemarket.NewAppModule(app.FeeMarketKeeper),
 		cosevmModule,
 		// this line is used by starport scaffolding # stargate/app/appModule
 	)
@@ -582,7 +627,7 @@ func New(
 
 	app.ScopedIBCKeeper = scopedIBCKeeper
 	app.ScopedTransferKeeper = scopedTransferKeeper
-	app.ScopedMonitoringKeeper = scopedMonitoringKeeper
+	// app.ScopedMonitoringKeeper = scopedMonitoringKeeper
 	// this line is used by starport scaffolding # stargate/app/beforeInitReturn
 
 	return app
@@ -684,6 +729,8 @@ func (app *App) GetSubspace(moduleName string) paramstypes.Subspace {
 func (app *App) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
 	clientCtx := apiSvr.ClientCtx
 	rpc.RegisterRoutes(clientCtx, apiSvr.Router)
+
+	evmrest.RegisterTxRoutes(clientCtx, apiSvr.Router)
 	// Register legacy tx routes.
 	authrest.RegisterTxRoutes(clientCtx, apiSvr.Router)
 	// Register new tx routes from grpc-gateway.
@@ -733,7 +780,10 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(crisistypes.ModuleName)
 	paramsKeeper.Subspace(ibctransfertypes.ModuleName)
 	paramsKeeper.Subspace(ibchost.ModuleName)
-	paramsKeeper.Subspace(monitoringptypes.ModuleName)
+	//
+	// ethermint subspaces
+	paramsKeeper.Subspace(evmtypes.ModuleName)
+	paramsKeeper.Subspace(feemarkettypes.ModuleName)
 	paramsKeeper.Subspace(cosevmmoduletypes.ModuleName)
 	// this line is used by starport scaffolding # stargate/app/paramSubspace
 
