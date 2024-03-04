@@ -509,6 +509,7 @@ func New(
 		paramstypes.ModuleName,
 		// monitoringptypes.ModuleName,
 		evmtypes.ModuleName,
+		feemarkettypes.ModuleName,
 		cosevmmoduletypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/beginBlockers
 	)
@@ -534,6 +535,7 @@ func New(
 		ibctransfertypes.ModuleName,
 		// monitoringptypes.ModuleName,
 		evmtypes.ModuleName,
+		feemarkettypes.ModuleName,
 		cosevmmoduletypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/endBlockers
 	)
@@ -564,6 +566,7 @@ func New(
 		feegrant.ModuleName,
 		// monitoringptypes.ModuleName,
 		evmtypes.ModuleName,
+		feemarkettypes.ModuleName,
 		cosevmmoduletypes.ModuleName,
 		// this line is used by starport scaffolding # stargate/app/initGenesis
 	)
@@ -589,6 +592,7 @@ func New(
 		ibc.NewAppModule(app.IBCKeeper),
 		transferModule,
 		// monitoringModule,evm.NewAppModule(app.EvmKeeper, app.AccountKeeper),
+		evm.NewAppModule(app.EvmKeeper, app.AccountKeeper),
 		feemarket.NewAppModule(app.FeeMarketKeeper),
 		cosevmModule,
 		// this line is used by starport scaffolding # stargate/app/appModule

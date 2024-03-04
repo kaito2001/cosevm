@@ -25,7 +25,7 @@ cosevmd config chain-id $CHAINID
 
 
 # if $KEY exists it should be deleted
-cosevmd keys add $KEY --keyring-backend $KEYRING --algo $KEYALGO
+cosevmd keys add $KEY --keyring-backend $KEYRING
 
 # Set moniker and chain-id for Ethermint (Moniker can be anything, chain-id must be an integer)
 cosevmd init $MONIKER --chain-id $CHAINID
