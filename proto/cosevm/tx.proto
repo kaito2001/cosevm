@@ -1,0 +1,13 @@
+syntax = "proto3";
+package cosevm.cosevm;
+
+// this line is used by starport scaffolding # proto/tx/import
+
+option go_package = "cosevm/x/cosevm/types";
+
+// Msg defines the Msg service.
+service Msg {
+    // this line is used by starport scaffolding # proto/tx/rpc
+}
+
+// this line is used by starport scaffolding # proto/tx/message
