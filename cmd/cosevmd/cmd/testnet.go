@@ -65,7 +65,7 @@ func TestnetCmd(mbm module.BasicManager, genBalIterator banktypes.GenesisBalance
 necessary files (private validator, genesis, config, etc.).
 Note, strict routability for addresses is turned off in the config file.
 Example:
-	babyd testnet --v 4 --output-dir ./output --starting-ip-address 192.168.10.2
+	cosevmd testnet --v 4 --output-dir ./output --starting-ip-address 192.168.10.2
 	`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			clientCtx, err := client.GetClientQueryContext(cmd)
@@ -123,7 +123,7 @@ func InitTestnet(
 ) error {
 
 	if chainID == "" {
-		chainID = "baby-" + tmrand.NewRand().Str(6)
+		chainID = "cosevm-" + tmrand.NewRand().Str(6)
 	}
 
 	nodeIDs := make([]string, numValidators)
