@@ -1,7 +1,7 @@
 # Run
 
 ```bash
-chmod +x local.sh
+chmod +x build.sh
 
-./local.sh
+./build.sh
 ```
