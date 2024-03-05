@@ -120,6 +120,7 @@ import (
 const (
 	AccountAddressPrefix = "cosmos"
 	Name                 = "cosevm"
+	DefaultDenom         = "ucosevm"
 )
 
 // this line is used by starport scaffolding # stargate/wasm/app/enabledProposals
